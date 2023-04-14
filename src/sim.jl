@@ -26,11 +26,15 @@ end
 
 function load_mechanism()
     urdf_path = joinpath(dirname(pathof(VehicleSim)), "assets", "chevy.urdf")
-    chevy_base = parse_urdf(urdf_path, floating=true)
-    chevy_joints = joints(chevy_base)
+    chevy_base = parse_urdf(urdf_path, floating=true) # creates mechanism by parsing urdf
+    chevy_joints = joints(chevy_base) # returns joints of chevy
     (; urdf_path, chevy_base, chevy_joints)
 end
 
+"""
+Initializes map, mapping ints (segment IDs) to road_segments. Finds road segment for 
+car to spawn on and asynchronously starts simulation for each car, visualizes simulation, .  
+"""
 function server(max_vehicles=1, 
         port=4444; 
         full_state=true, 
@@ -40,7 +44,7 @@ function server(max_vehicles=1,
         measure_cam=true, 
         measure_gt=true)
     host = getipaddr()
-    map = training_map()
+    map = training_map() # dict of ints (seg id) to road segments 
     server_visualizer = get_vis(map, true, host)
     @info "Server can be connected to at $host and port $port"
     @info inform_hostport(server_visualizer, "Server visualizer")
@@ -50,7 +54,7 @@ function server(max_vehicles=1,
     (; urdf_path, chevy_base, chevy_joints) = load_mechanism()
     chevy_visuals = URDFVisuals(urdf_path, package_path=[dirname(pathof(VehicleSim))])
 
-    viable_segments = Set(keys(map))
+    viable_segments = Set(keys(map)) # set of indices of map (index = seg id)
     spawn_points = Dict()
     vehicles = Dict()
 
@@ -64,7 +68,8 @@ function server(max_vehicles=1,
         while true
             seg_id = rand(rng, viable_segments)
             delete!(viable_segments, seg_id)
-            if contains_lane_type(map[seg_id], intersection, stop_sign)
+            # checks if road segments is intersection or stop sign
+            if contains_lane_type(map[seg_id], intersection, stop_sign) 
                 continue
             else
                 seg = map[seg_id]
@@ -72,6 +77,19 @@ function server(max_vehicles=1,
             end
         end
         spawn_points[vehicle_id] = seg
+        child = map[seg.children[1]]
+        gchild = map[child.children[1]]
+        ggchild = map[gchild.children[1]]
+        gggchild = map[ggchild.children[1]]
+        ggggchild = map[gggchild.children[2]]
+
+        println("starting point $seg")
+        println("child seg $child")
+        println("gchild seg $gchild")
+        println("ggchild seg $ggchild")
+        println("gggchild seg $gggchild")
+        println("ggggchild seg $ggggchild")
+
         vehicle = spawn_car_on_map(all_visualizers, seg, chevy_base, chevy_visuals, chevy_joints, vehicle_id)
         @async sim_car(cmd_channels[vehicle_id], state_channels[vehicle_id], shutdown_channel, vehicle, vehicle_id)
         vehicles[vehicle_id] = vehicle
@@ -209,7 +227,7 @@ function sim_car(cmd_channel, state_channel, shutdown_channel, vehicle, vehicle_
             fetch(shutdown_channel) && throw(error("Shutdown!"))
         end
         if isready(state_channel)
-            stale = take!(state_channel)
+            state = take!(state_channel)
         end
         put!(state_channel, state)
     end

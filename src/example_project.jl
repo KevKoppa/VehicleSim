@@ -1,10 +1,11 @@
+"""
 struct MyLocalizationType
     field1::Int
     field2::Float64
 end
 
 struct MyPerceptionType
-    field1::Int1
+    field1::Int
     field2::Float64
 end
 
@@ -31,7 +32,126 @@ function localize(gps_channel, imu_channel, localization_state_channel)
         put!(localization_state_channel, localization_state)
     end 
 end
+"""
 
+
+# rng makes start = 32 children: 30, 28, 26, 24
+function route(goal::Int, start::Int)
+
+    # temporarily have map variable but change to function parameter 
+    map::Dict{Int, RoadSegment} = training_map()
+
+    function manhattan(goal::Int, start::Int) 
+        p1 = map[goal].lane_boundaries[1].pt_b
+        p2 = map[goal].lane_boundaries[2].pt_b
+        p3 = map[start].lane_boundaries[1].pt_b
+        p4 = map[start].lane_boundaries[2].pt_b
+        
+        pgoal = (p1 + p2)/2
+        pstart = (p3 + p4)/2
+    
+        return sum(abs.(pgoal - pstart))
+    end 
+
+    function neighbors(road::Int)
+        return map[road].children
+    end
+
+    function isgoal(goal::Int, start::Int)
+        return goal == start
+    end
+    
+    function hash(road::Int) 
+        return road
+    end
+
+    result = astar(neighbors, start, goal; heuristic=manhattan, cost=manhattan, isgoal=isgoal, hashfn=hash, timeout=Inf, maxcost=Inf)
+    if (result.status == :success)
+        return result.path
+    else
+        return Vector{Int}[]
+    end
+end
+
+# Q comes after P always
+struct MidPath
+    midP::SVector{2,Float64}
+    midQ::SVector{2,Float64}
+    speed_limit::Float64
+    lane_types::Vector{LaneTypes}
+end
+
+function midpoints(paths::Vector{Int}) 
+    # temporarily have map variable but change to function parameter 
+    map::Dict{Int, RoadSegment} = training_map()
+    n = length(paths)
+    if n == 0
+        return Vector{Path}[]
+    end
+
+    midpointPaths::Vector{MidPath} = []
+
+    for i in 1:n
+        lane = map[paths[i]]
+        midP = (lane.lane_boundaries[1].pt_a + lane.lane_boundaries[2].pt_a)/2
+        midQ = (lane.lane_boundaries[1].pt_b + lane.lane_boundaries[2].pt_b)/2
+        
+        push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types)) 
+        
+        """
+        differentiate between intersection and other lane types later 
+        if lane.lane_types == intersection
+            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
+        else
+            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
+        end
+        midpoints.push!(mid)
+        """
+    end
+
+    return midpointPaths
+end
+
+# cross track error of vehicle point (distance between vehicle and path)
+function CTE(ego::SVector{2,Float64}, path::MidPath) 
+    midP = path.midP
+    midQ = path.midQ
+    v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
+    r = [midP[1] - ego[1]; midP[2] - ego[2]]
+    return sum(v.*r)
+end
+
+# returns midPath that vehicle should travel should be incremented to next one
+function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
+    dist = (ego - path.midP)'*((ego - path.midP))
+    if dist < 1
+        print("dist=$dist")
+        return true
+    else
+        return false
+    end
+end
+
+function path_planning(
+    socket
+    )
+    #=
+    localization_state_channel, 
+    perception_state_channel, 
+    map, 
+    target_road_segment_id, 
+    =#
+    # do some setup
+    #latest_localization_state = fetch(localization_state_channel)
+    #latest_perception_state = fetch(perception_state_channel)
+    # figure out what to do ... setup motion planning problem etc
+    steering_angle = 0.0
+    target_vel = 1.0
+    cmd = VehicleCommand(steering_angle, target_vel, true)
+    serialize(socket, cmd)
+end
+
+"""
 function perception(cam_meas_channel, localization_state_channel, perception_state_channel)
     # set up stuff
     while true
@@ -112,3 +232,4 @@ function my_client(host::IPAddr=IPv4(0), port=4444)
     @async perception(cam_channel, localization_state_channel, perception_state_channel)
     @async decision_making(localization_state_channel, perception_state_channel, map, socket)
 end
+"""
