@@ -20,7 +20,7 @@ function keyboard_client(host::IPAddr=IPv4(0), port=4444; v_step = 1.0, s_step =
     #println("hello")
 
     @async while isopen(socket)
-        sleep(0.001)
+        #sleep(0.001)
         state_msg = deserialize(socket)
         #println("msg: $state_msg")
 
@@ -172,7 +172,16 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
 
     @async while isopen(socket)
         sleep(0.001)
-        state_msg = deserialize(socket)
+        #state_msg = deserialize(socket)
+        local state_msg
+        while true
+            @async eof(socket)
+            if bytesavailable(socket) > 0
+                state_msg = deserialize(socket)
+            else
+                break
+            end
+        end
         #println("msg: $ state_msg")
 
         # MeasurementMessage - vehicle_id::Int, target_segment::Int, measurements::Vector{Measurement}
@@ -184,13 +193,6 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         num_gt = 0
         for meas in measurements
             if meas isa GroundTruthMeasurement
-                #=
-                full = isFull(gt_channel)
-                if i < 10
-                    @info "gt found! $meas "
-                    @info "full? $full"
-                end
-                =#
                 num_gt += 1
                 !isFull(gt_channel) && put!(gt_channel, meas)
             elseif meas isa CameraMeasurement
@@ -205,7 +207,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         if j < 20
             @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
             j += 1
-        end=#
+        end
+        =#
     end
     
     routes::Vector{Int} = route(38,32)
@@ -228,9 +231,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     =#
     m = 2
     taup = 0.1
-    taud = 0.05
+    taud = 0.2
     controlled = true
-    target_velocity = 1
+    target_velocity = 2.5
     steering_angle = 0.0
     error = 0
     init_error = 0
@@ -252,21 +255,55 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         end
         =#
         
-        local meas; 
-        if isready(gt_channel)
-            if length(gt_channel.data) == 1
-                meas = fetch(gt_channel)
-            else
-                meas = take!(gt_channel)
+        meas = fetch(gt_channel)
+        #len = length(gt_channel.data) 
+        #=
+        if j < 100
+            @info "len: $len"
+            j += 1
+        end
+        =#
+
+        while length(gt_channel.data)  > 1
+            #=
+            if j < 100
+                print("in while loop length - $len")
+                    j += 1
+            end
+            =#
+            new_meas = take!(gt_channel)
+            if  new_meas.time > meas.time
+                meas = new_meas
             end
         end
 
-        ego = SA[meas.position[1] ; meas.position[2]]
+        if j < 200
+            @info "meas: $meas"
+            j += 1
+        end
+        
+        #=
+        w = meas.orientation[1]
+        x = meas.orientation[2]
+        y = meas.orientation[3]
+        z = meas.orientation[4]
 
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        yaw_z = atan(t3, t4)
+        ego = SA[meas.position[1] ; meas.position[2]] + meas.size[1]/4*SA[cos(yaw_z), sin(yaw_z)]
+        =# 
+
+        ego = SA[meas.position[1] ; meas.position[2]]
+        #print("ego $ego")
         #println("calling iterateMidPath")
         if (iterateMidPath(ego, midpoint_paths[m]))
             m += 1
-            #print("changed mid path")
+            print("changed mid path from ")
+            midP = midpoint_paths[m].midP
+            midQ = midpoint_paths[m].midQ
+
+            print("$midP to $midQ\n")
         end
 
         #println("made it out of iterateMidPath")

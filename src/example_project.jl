@@ -123,9 +123,12 @@ end
 
 # returns midPath that vehicle should travel should be incremented to next one
 function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
-    dist = (ego - path.midP)'*((ego - path.midP))
-    if dist < 1
-        print("dist=$dist")
+    midP = path.midP
+    
+    dist = sqrt((ego - path.midP)'*((ego - path.midP)))
+    #print("dist=$dist from ego=$ego to midP=$midP")
+    if dist < 3
+        
         return true
     else
         return false
