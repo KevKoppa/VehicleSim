@@ -26,7 +26,7 @@ include("control.jl")
 include("sink.jl")
 include("measurements.jl")
 include("map.jl")
-include("example_project.jl") # added for testing purposes
+include("example_project.jl")
 
 
 
