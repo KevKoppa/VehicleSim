@@ -126,9 +126,11 @@ function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
     midP = path.midP
     
     dist = sqrt((ego - path.midP)'*((ego - path.midP)))
-    #print("dist=$dist from ego=$ego to midP=$midP")
-    if dist < 3
-        
+    #print("dist=$dist from ego=$ego to midP=$midP\n")
+
+    # need distance to be 11 to make turns 
+    if dist < 11
+        print("dist=$dist from ego=$ego to midP=$midP\n")
         return true
     else
         return false
@@ -152,6 +154,10 @@ function path_planning(
     target_vel = 1.0
     cmd = VehicleCommand(steering_angle, target_vel, true)
     serialize(socket, cmd)
+end
+
+function isfull(ch::Channel)
+    length(ch.data) ≥ ch.sz_max
 end
 
 """
@@ -192,10 +198,6 @@ function decision_making(localization_state_channel,
         cmd = VehicleCommand(steering_angle, target_vel, true)
         serialize(socket, cmd)
     end
-end
-
-function isfull(ch::Channel)
-    length(ch.data) ≥ ch.sz_max
 end
 
 
