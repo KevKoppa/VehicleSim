@@ -126,9 +126,11 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     
     @info "Press 'q' at any time to terminate vehicle."
     
+    # for print statements
     i = 0
     j = 0
 
+    # collect data from ground truth channel 
     @async while isopen(socket)
         sleep(0.001)
         local measurement_msg
@@ -164,6 +166,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             end
         end
         
+        # print statements for debugging 
         #=
         if i < 50
             @info "Measurements received: $num_gt gt; $num_cam cam; $num_imu imu; $num_gps gps"
@@ -173,19 +176,21 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     end
     
     
-    routes::Vector{Int} = route(38,32)
-    midpoint_paths::Vector{MidPath} = midpoints(routes)
+    routes::Vector{Int} = route(38,32) # sample route for car 
+    midpoint_paths::Vector{MidPath} = midpoints(routes) # list of midpoint paths created 
 
     m = 2
     taup = 0.1
-    taud = 0.2
+    taud = 0.3
     controlled = true
     target_velocity = 6 # velocity >=2.5 is out of control 
     steering_angle = 0.0
     error = 0
     init_error = 0
     first_iter = true
-    cond = true
+    cond = true # condition for main while loop to execute 
+
+    # main while loop for execution 
     @async while cond
         sleep(0.001)
         meas = fetch(gt_channel)
@@ -196,6 +201,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             print("ego $ego_id\n")
             j += 1
         end
+
+        # get most recent data from channel 
         while length(gt_channel.data)  > 1
             new_meas = take!(gt_channel)
             if  new_meas.time > meas.time  #&& meas.vehicle_id == ego_id
@@ -203,6 +210,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             end
         end
         
+        # New ego calculates the point 2/3 * length in front of center of car using quaternion measurements
         # Didn't change performance relative to using center of car before adopting circular turn error
         # Significantly improved turns after implementing curved turn error with dist 7
         # adding length failed, 1/2 length best
@@ -217,8 +225,11 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         ego = SA[meas.position[1] ; meas.position[2]] + 2*meas.size[1]/3*SA[cos(yaw_z), sin(yaw_z)]
         
 
+        # old ego only considered center of car 
         #ego = SA[meas.position[1] ; meas.position[2]]
 
+        # takes in ego position and next midpoint path and determines whether path followed should 
+        # change to that next path if close enough 
         if (iterateMidPath(ego, midpoint_paths[m]))
             print("changed mid path from \n")
             oldMidP = midpoint_paths[m-1].midP
@@ -251,10 +262,12 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             dev = error-init_error
         end
 
+        # TODO tinker with tau values to minimize overshoot 
         steering_angle = -taup*error - taud*dev
 
+        # ensures that steering angle isn't huge value 
         # 0.5 steering allows for enough steering ability while not over steering
-        # 0.3 not enough steering ability 
+        # 0.3 not enough steering ability
         if (steering_angle > 0.5)
             steering_angle = 0.5
         elseif (steering_angle < -0.5)
@@ -266,6 +279,7 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         serialize(socket, cmd)
     end
     
+    # if 'q' clicked, then main thread terminates
     while controlled && isopen(socket)
         key = get_c()
         if key == 'q'

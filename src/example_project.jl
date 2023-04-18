@@ -100,42 +100,26 @@ function midpoints(paths::Vector{Int})
         if (lane.lane_boundaries[1].curvature != 0)
             r1 = 1/lane.lane_boundaries[1].curvature
             r2 = 1/lane.lane_boundaries[2].curvature
-            avg_curvature =  2 / (r1 + r2)
+            avg_curvature =  2 / (r1 + r2) # average curvature calculated by 1/average radius
         end
-        #push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types)) 
         push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types, avg_curvature)) 
-        
-        #=
-        # differentiate between intersection and other lane types later 
-        if lane.lane_types == intersection
-            mid = (lane.lane_boundaries[i].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
-        else
-            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
-        end
-        midpoints.push!(mid)
-        =#
-        
     end
 
     return midpointPaths
 end
 
 # cross track error of vehicle point (distance between vehicle and path)
+# positive error if on right of path and negative error if on left
 function CTE(ego::SVector{2,Float64}, path::MidPath) 
-    #=
-    midP = path.midP
-    midQ = path.midQ
-    v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
-    r = [midP[1] - ego[1]; midP[2] - ego[2]]
-    return sum(v.*r)
-    =#
-    if (path.avg_curvature == 0)
+    if (path.avg_curvature == 0) 
+        # straight lanes
         midP = path.midP
         midQ = path.midQ
         v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
         r = [midP[1] - ego[1]; midP[2] - ego[2]]
         return sum(v.*r)
     else 
+        # curved lanes
         center = findCenter(path::MidPath)
         local c; 
         if path.avg_curvature < 0
@@ -143,12 +127,13 @@ function CTE(ego::SVector{2,Float64}, path::MidPath)
         else
             c = 1
         end
-        dist = sqrt((center - ego)'*((center - ego)))
+        dist = sqrt((center - ego)'*((center - ego))) # distance between ego and center 
         return c*(abs(1/path.avg_curvature) - dist)
     end
 end
 
-# returns midPath that vehicle should travel should be incremented to next one
+# returns whether midPath that vehicle should travel should be incremented to next one
+# if close enough to next midpoint
 function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
     midP = path.midP
     
@@ -164,7 +149,8 @@ function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
     end
 end
 
-# finds center of circle given midpath 
+# finds center of circle given midpath considering 8 different curved track possibilities
+# negative curvature = right turn, positive curvature = left turn  
 function findCenter(path::MidPath)
     x1 = path.midP[1]
     y1 = path.midP[2]
