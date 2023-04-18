@@ -76,20 +76,16 @@ function server(max_vehicles=1,
                 break
             end
         end
-        spawn_points[vehicle_id] = seg
-        child = map[seg.children[1]]
-        gchild = map[child.children[1]]
-        ggchild = map[gchild.children[1]]
-        gggchild = map[ggchild.children[1]]
-        ggggchild = map[gggchild.children[2]]
-
-        println("starting point $seg")
-        println("child seg $child")
-        println("gchild seg $gchild")
-        println("ggchild seg $ggchild")
-        println("gggchild seg $gggchild")
-        println("ggggchild seg $ggggchild")
-
+        
+        routes::Vector{Int} = route(38,32)
+        for r in routes
+            m = map[r]
+            if m.lane_boundaries[1].curvature != 0
+                print("$m\n")
+            end
+        end
+        m = map[33]
+        print("route 33 - $m\n")
         vehicle = spawn_car_on_map(all_visualizers, seg, chevy_base, chevy_visuals, chevy_joints, vehicle_id)
         @async sim_car(cmd_channels[vehicle_id], state_channels[vehicle_id], shutdown_channel, vehicle, vehicle_id)
         vehicles[vehicle_id] = vehicle

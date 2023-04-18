@@ -79,6 +79,7 @@ struct MidPath
     midQ::SVector{2,Float64}
     speed_limit::Float64
     lane_types::Vector{LaneTypes}
+    avg_curvature::Float64
 end
 
 function midpoints(paths::Vector{Int}) 
@@ -95,18 +96,25 @@ function midpoints(paths::Vector{Int})
         lane = map[paths[i]]
         midP = (lane.lane_boundaries[1].pt_a + lane.lane_boundaries[2].pt_a)/2
         midQ = (lane.lane_boundaries[1].pt_b + lane.lane_boundaries[2].pt_b)/2
+        avg_curvature = 0
+        if (lane.lane_boundaries[1].curvature != 0)
+            r1 = 1/lane.lane_boundaries[1].curvature
+            r2 = 1/lane.lane_boundaries[2].curvature
+            avg_curvature =  2 / (r1 + r2)
+        end
+        #push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types)) 
+        push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types, avg_curvature)) 
         
-        push!(midpointPaths, MidPath(midP, midQ, lane.speed_limit, lane.lane_types)) 
-        
-        """
-        differentiate between intersection and other lane types later 
+        #=
+        # differentiate between intersection and other lane types later 
         if lane.lane_types == intersection
-            mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
+            mid = (lane.lane_boundaries[i].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
         else
             mid = (lane.lane_boundaries[1].pt_b + map[path[i]].lane_boundaries[2].pt_b)/2
         end
         midpoints.push!(mid)
-        """
+        =#
+        
     end
 
     return midpointPaths
@@ -114,11 +122,30 @@ end
 
 # cross track error of vehicle point (distance between vehicle and path)
 function CTE(ego::SVector{2,Float64}, path::MidPath) 
+    #=
     midP = path.midP
     midQ = path.midQ
     v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
     r = [midP[1] - ego[1]; midP[2] - ego[2]]
     return sum(v.*r)
+    =#
+    if (path.avg_curvature == 0)
+        midP = path.midP
+        midQ = path.midQ
+        v = [midQ[2] - midP[2]; -(midQ[1] - midP[1])]
+        r = [midP[1] - ego[1]; midP[2] - ego[2]]
+        return sum(v.*r)
+    else 
+        center = findCenter(path::MidPath)
+        local c; 
+        if path.avg_curvature < 0
+            c = -1
+        else
+            c = 1
+        end
+        dist = sqrt((center - ego)'*((center - ego)))
+        return c*(abs(1/path.avg_curvature) - dist)
+    end
 end
 
 # returns midPath that vehicle should travel should be incremented to next one
@@ -137,6 +164,46 @@ function iterateMidPath(ego::SVector{2,Float64}, path::MidPath)
     end
 end
 
+# finds center of circle given midpath 
+function findCenter(path::MidPath)
+    x1 = path.midP[1]
+    y1 = path.midP[2]
+    x2 = path.midQ[1]
+    y2 = path.midQ[2]
+
+    # Cases 1-4 (negative curvature) represent inwards lane and 5-8 (positive curvature) represent outer lane
+    local center;
+    if path.avg_curvature < 0
+        if y2 > y1 && x2 > x1 
+            # Case 1
+            center = SA[x2, y1]
+        elseif y2 < y1 && x2 > x1 
+            # Case 2
+            center = SA[x1, y2]
+        elseif y2 < y1 && x2 < x1 
+            # Case 3
+            center = SA[x2, y1]
+        else 
+            # Case 4
+            center = SA[x1, y2]
+        end
+    else 
+        if y2 > y1 && x2 > x1
+            # Case 5
+            center = SA[x1, y2]
+        elseif y2 < y1 && x2 > x1
+            # Case 6
+            center = SA[x2, y1]
+        elseif y2 < y1 && x2 < x1
+            # Case 7
+            center = SA[x1, y2]
+        else
+            # Case 8
+            center = SA[x2, y1]
+        end
+    end
+    return center
+end
 function path_planning(
     socket
     )

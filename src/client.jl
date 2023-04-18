@@ -180,14 +180,13 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
     taup = 0.1
     taud = 0.2
     controlled = true
-    target_velocity = 1.5 # velocity >=2.5 is out of control 
+    target_velocity = 6 # velocity >=2.5 is out of control 
     steering_angle = 0.0
     error = 0
     init_error = 0
     first_iter = true
     cond = true
     @async while cond
-
         sleep(0.001)
         meas = fetch(gt_channel)
 
@@ -204,8 +203,9 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             end
         end
         
-        # Didn't change performance relative to using center of car
-        #=
+        # Didn't change performance relative to using center of car before adopting circular turn error
+        # Significantly improved turns after implementing curved turn error with dist 7
+        # adding length failed, 1/2 length best
         w = meas.orientation[1]
         x = meas.orientation[2]
         y = meas.orientation[3]
@@ -214,10 +214,10 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
         t3 = +2.0 * (w * z + x * y)
         t4 = +1.0 - 2.0 * (y * y + z * z)
         yaw_z = atan(t3, t4)
-        ego = SA[meas.position[1] ; meas.position[2]] + meas.size[1]/4*SA[cos(yaw_z), sin(yaw_z)]
-        =#
+        ego = SA[meas.position[1] ; meas.position[2]] + 2*meas.size[1]/3*SA[cos(yaw_z), sin(yaw_z)]
+        
 
-        ego = SA[meas.position[1] ; meas.position[2]]
+        #ego = SA[meas.position[1] ; meas.position[2]]
 
         if (iterateMidPath(ego, midpoint_paths[m]))
             print("changed mid path from \n")
@@ -225,8 +225,8 @@ function auto_client(host::IPAddr=IPv4(0), port=4444)
             oldMidQ = midpoint_paths[m-1].midQ
             newMidP = midpoint_paths[m].midP
             newMidQ = midpoint_paths[m].midQ
-
-            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ\n")
+            averageR = 1/midpoint_paths[m].avg_curvature
+            print("$oldMidP -$oldMidQ to $newMidP - $newMidQ $averageR\n")
 
             m += 1
         end
